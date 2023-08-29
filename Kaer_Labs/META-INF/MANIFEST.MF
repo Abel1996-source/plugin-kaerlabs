@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Kaer_Labs
+Bundle-SymbolicName: Kaer_Labs
+Bundle-Version: 1.0.0.qualifier
+Automatic-Module-Name: Kaer.Labs
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8

@@ -1,0 +1,67 @@
+import java.io.File;
+import ij.IJ;
+import ij.ImagePlus;
+import ij.gui.ImageWindow;
+import ij.io.OpenDialog;
+import ij.io.Opener;
+import ij.plugin.PlugIn;
+
+public class Kis_Overlay implements PlugIn{
+
+	private File file;
+
+	@SuppressWarnings("unlikely-arg-type")
+	@Override
+	public void run(String arg0) {
+		// TODO Auto-generated method stub
+		OpenDialog dg=new OpenDialog("Open Kis Tiff file",null);
+		
+		if(dg.getDirectory()==null) {
+			return;
+		}
+		
+		file=new File(dg.getDirectory(),dg.getFileName());
+		
+		if(file==null || file.equals(" ")) {
+			return;
+		}
+		
+		Opener opener =new Opener();
+		ImagePlus image1=opener.openImage(file.getAbsolutePath()); 
+		
+		if( image1 == null ) {
+	         IJ.showMessage("Error", "Cannot open image, unknown format.");
+	         return;
+	        }
+		
+		image1.show();//afficher l'image 1
+		ImageWindow win1 = image1.getWindow();
+		win1.setLocation(0,0);
+
+		/**
+		 * Parcour du reperpoir parent pour selectionner l'image brightfield
+		 */
+		ImagePlus image2=opener.openImage(file.getAbsolutePath()); 
+		if( image2==null) {
+	         IJ.showMessage("Error", "Cannot open image, unknown format.");
+	         return;
+	        }
+		
+		image2.show();//afficher l'image 2
+		ImageWindow win2 = image2.getWindow();
+		win2.setLocation(500, 0);
+		
+	//Extraction de la drescription des images 	  
+		      String json_txt = image1.getProp("ImageDescription");
+		      String json_txt1 = image1.getProp("ImageDescription");
+		        if( json_txt == null || json_txt1 == null ) {
+		                 IJ.showMessage("Error", "cannot extract meta field from file.");
+		                 return;
+		        }
+		
+		
+	}
+
+	
+
+}

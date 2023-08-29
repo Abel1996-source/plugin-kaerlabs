@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Copy element &apos;&apos; to &apos;Kis_Folder.IHM().new ActionListener() {...}&apos;&#x0D;&#x0A;- Original project: &apos;Kis_overlay_folder&apos;&#x0D;&#x0A;- Destination element: &apos;Kis_Folder.IHM().new ActionListener() {...}&apos;&#x0D;&#x0A;- Original element: &apos;Kis_Folder.IHM().new ActionListener() {...}.actionPerformed(...)&apos;" description="Copy method" destination="/src&lt;{Kis_Folder.java[Kis_Folder~IHM[!7" element1="/src&lt;{Kis_Folder.java[Kis_Folder~IHM[!7~actionPerformed~QActionEvent;" flags="589830" id="org.eclipse.jdt.ui.copy" members="1" policy="org.eclipse.jdt.ui.copyMembers" stamp="1689853260452" version="1.0"/>
+</session>

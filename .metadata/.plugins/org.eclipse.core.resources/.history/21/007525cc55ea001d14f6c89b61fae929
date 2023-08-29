@@ -1,0 +1,52 @@
+import java.awt.event.AdjustmentEvent;
+import java.awt.event.AdjustmentListener;
+import java.awt.image.IndexColorModel;
+
+import ij.ImagePlus;
+import ij.process.ImageProcessor;
+import ij.process.LUT;
+
+public class LutMaxAjusterner implements AdjustmentListener  {
+	public ImagePlus imp;
+	public LutMaxAjusterner(ImagePlus imp) {
+		this.imp=imp;
+	}
+
+	@Override
+	public void adjustmentValueChanged(AdjustmentEvent e) {
+		// Récupérer la valeur du curseur
+        int lutMax = e.getValue();
+        
+
+ 	   IndexColorModel icm = (IndexColorModel) imp.getProcessor().getLut().getColorModel();
+	          
+	          int mapSize = icm.getMapSize();
+	          byte[] reds = new byte[mapSize];
+	          byte[] greens = new byte[mapSize];
+	          byte[] blues = new byte[mapSize];
+	          icm.getReds(reds);
+	          icm.getGreens(greens);
+	          icm.getBlues(blues);
+	          
+	          
+	         
+	          for (int i = 0; i < mapSize; i++) {
+	        	 double  value = ((double)i / (double)mapSize);
+	              if (value > lutMax*65535) {
+	                  reds[i] = (byte)(lutMax * 255.0);
+	                  greens[i] = (byte)(lutMax * 255.0);
+	                  blues[i] = (byte)(lutMax * 255.0);
+	              }
+	            
+	          }
+	          
+	          IndexColorModel newIcm = new IndexColorModel(8, mapSize, reds, greens, blues);
+	          LUT newLut = new LUT(newIcm, ip.getLut().min, (int) (lutmax * 255));
+	          byteIp.setLut(newLut);
+
+	        ImageProcessor ipRGB=byteIp.convertToRGB();
+	        image.setProcessor(ipRGB);
+		
+	}
+	
+}

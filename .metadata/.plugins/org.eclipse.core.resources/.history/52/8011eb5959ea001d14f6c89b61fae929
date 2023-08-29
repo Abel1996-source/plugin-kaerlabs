@@ -1,0 +1,830 @@
+
+
+import java.awt.Button;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.image.IndexColorModel;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Date;
+
+
+import javax.swing.JColorChooser;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+
+import ij.IJ;
+import ij.ImagePlus;
+import ij.gui.*;
+import ij.io.FileSaver;
+import ij.io.OpenDialog;
+import ij.io.Opener;
+import ij.plugin.LutLoader;
+import ij.plugin.PlugIn;
+import ij.process.ColorProcessor;
+import ij.process.ImageProcessor;
+import ij.process.LUT;
+
+
+
+
+
+/**
+ * 
+ * @author KONAN Kouakou Abel
+ *
+ *Développement de plugin pour le traitemant d'image avec ImageJ/Fiji
+ */
+public class Kis_Overlay implements PlugIn{
+
+	private File file;
+	private ImagePlus image,image1, overlayImage;
+	
+	
+	private String json_txt;
+	private String json_txt1;
+	private Color color;
+    private String frameId_1,frameId_2;
+    
+    private LUT lut;
+    private String subtracted, brightfield;
+   
+    private double lutmax=1.0;
+    private String lutName;
+    
+    private JPanel panel;
+    private JFrame frame;
+    
+    private int setCount=1;
+    
+    
+    //liste de sélection
+    private String[] options = {"Max", "Add", "Soustract","Multiply","and","or"};
+    
+    // Liste de sélection
+    private String OptionSelectid="Max";
+
+	
+	@SuppressWarnings("unlikely-arg-type")
+	@Override
+	public void run(String arg0) {
+		
+		 JOptionPane.showMessageDialog(null, "Please choose only the substrated image ! click ok to continue!");
+		 
+		 /**
+		 * 	Boite de dialogue
+		 */
+		 
+			OpenDialog dg=new OpenDialog("Open Kis Tiff file",null);
+			
+			if(dg.getDirectory()==null) {
+				return;
+			}
+			
+			file=new File(dg.getDirectory(),dg.getFileName());
+			
+			if(file==null || file.equals("")) {
+				return;
+			}
+			
+			/**--------------------------------------------------------
+			 *					 Etude de l'image 1
+			 * ---------------------------------------------------------
+			 */
+			Opener opener =new Opener();
+			 image=opener.openImage(file.getAbsolutePath()); 
+			
+			 //Récuperer le chemin de l'image subtracted;
+			 subtracted=file.getAbsolutePath();
+			if( image == null ) {
+		         IJ.showMessage("Error", "Cannot open image, unknown format.");
+		         return;
+		        }
+			
+			
+			/**
+			 * Test sur les deux images 
+			 */
+			
+				  json_txt = image.getProp("ImageDescription");
+				  if(json_txt == null ) {
+			             IJ.showMessage("Error", "cannot extract meta field from file.");
+			             return;}
+				 //-------------------FrameID--------------//--
+				  
+				  frameId_1=frameId_for_Image(json_txt);
+				  
+			  //--------------------------------------------//-
+				  
+			/**-----------------------------------------------
+			*			 Etude sur l'image 2
+		    * -----------------------------------------------
+		    */
+				  
+				  File repertoir=new File(file.getParent().replaceFirst("subtracted", "brightfield"));
+				  
+		 		 if(repertoir.exists()) {
+
+					  File []files=repertoir.listFiles();
+					  if(files==null) {
+						  JOptionPane.showMessageDialog(null, "The brightfield folder is empty. Click ok to exit !");
+						  return;
+					  }
+					  
+					  for(int i=0;i<files.length;i++) {
+						   image1= opener.openImage(files[i].getAbsolutePath());
+						  json_txt1 = image1.getProp("ImageDescription");
+						    frameId_2=frameId_for_Image(json_txt1);
+						    
+						   if(frameId_2.equals(frameId_1)) {
+							   image1= opener.openImage(files[i].getAbsolutePath());
+							   brightfield=files[i].getAbsolutePath();
+							   json_txt1 = image1.getProp("ImageDescription");
+							   break;
+						   }
+					  }
+		 		 }else {
+		 			 
+		 			JOptionPane.showMessageDialog(null, "The brightfield folder does not exist. Click ok to exit !");
+		 		 }
+				  
+				  
+			/**------------------------------------------------------------------
+			 *			 Afichage des images.
+			 * ------------------------------------------------------------------
+			 */
+		 		//image subtracted	 		
+			 		//image=applies_color(image);
+		 		image1=CovertTO_Brightfield_Rgb(image1);
+		 		
+		 		
+		 		//overlayImage=Overlay_images(image,image1,OptionSelectid);
+		 		ReturnImage returnimage= applies_color(image);
+		 			returnimage.image1.show();
+					ImageWindow win1 = returnimage.image1.getWindow();
+					win1.setLocation(50,10);
+					
+					//image brightfield
+					
+					ImageWindow win2 = null;
+					if(repertoir.exists()) {
+						
+						image1.show();//afficher l'image 2
+						 win2 = image1.getWindow();
+						win2.setLocation(500,10);					
+					}
+					
+				if(setCount==1) {
+					
+					//superposition des deux images 
+						returnimage.image2.show();
+						ImageWindow win3 = returnimage.image2.getWindow();
+						win3.setLocation(700,10);
+						save_images(returnimage.image2,OptionSelectid);
+				}else {
+					win1.close();
+					if(win2!=null) {
+						win2.close();
+					}
+				
+					IJ.showMessage("Please go to choose the subtracted image and apply the parameters ! ");
+					setCount=1;
+				}
+				
+								
+	
+	//end run 
+	}
+		
+	
+	//----------------------------Les Methodes ----------------------------------//
+	
+	/**
+	 * Méthode pour récuperer le frameId de l'image.
+	 */
+
+	@SuppressWarnings("unused")
+	public String frameId_for_Image(String json_txt) {
+		String frameId = null;
+		
+		try {
+			int open_braces = 0;
+		      int close_braces = 0;
+
+		      // Handle missing last char in KC3.0.
+		      for( int i1 = 0; i1 < json_txt.length(); i1++ ) {
+		      char c = json_txt.charAt(i1);
+		      if( c == '{' ) open_braces += 1;
+		      if( c == '}' ) close_braces += 1;
+		      }
+		      if( open_braces != close_braces) {
+		         json_txt = json_txt + "}";
+		      }
+			JSONObject json = new JSONObject(json_txt);
+			
+			if( json == null ) {
+		         IJ.showMessage("Error", "cannot parse meta field from file: no kiscontrol metadata found.");
+			}
+			 frameId=json.getJSONObject("frame_id").getString("String");
+			
+			
+			
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
+		return frameId;
+		
+	}
+	
+	/**
+	 *  Méthode de reglage de l'image substrated avant de l'afficher
+	 */
+	
+	
+	/**
+	 * Fonction permettant de faire la fusion.
+	 * @param subtracted_rgb
+	 * @param brightfield_rgb
+	 * @return Overlay image
+	 */
+	public ImagePlus Overlay_images(ImagePlus subtracted_rgb,ImagePlus brightfield_rgb,String option) {
+		
+		ImageProcessor ip_SubtractedRGB=subtracted_rgb.getProcessor();
+		ImageProcessor ip_BrightfieldRGB=brightfield_rgb.getProcessor();
+		
+		int [] SubtractedRGB_Pixels=(int[]) ip_SubtractedRGB.getPixels();
+		int [] BrightfieldRGB_Pxels=(int[]) ip_BrightfieldRGB.getPixels();
+		
+		int width=ip_SubtractedRGB.getWidth();
+		int height=ip_SubtractedRGB.getHeight();
+		
+		ColorProcessor OverlayProcessor=new ColorProcessor(width,height);
+		
+		if(option.equals("or")) {
+		 for (int y = 0; y < height; y++) {
+	            for (int x = 0; x < width; x++) {
+	                int index = y * width + x;
+	                
+	                // Extract the color components for each pixel
+	                int rSubtractedColor = (SubtractedRGB_Pixels[index] >> 16) & 0xff;
+	                int gSubtractedColor = (SubtractedRGB_Pixels[index] >> 8) & 0xff;
+	                int bSubtractedColor = SubtractedRGB_Pixels[index] & 0xff;
+	                
+	                int rBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 16) & 0xff;
+	                int gBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 8) & 0xff;
+	                int bBrightfieldRGB = BrightfieldRGB_Pxels[index] & 0xff;
+	                
+	                
+	              
+	                int rOverlay = rSubtractedColor | rBrightfieldRGB;
+	                int gOverlay = gSubtractedColor | gBrightfieldRGB;
+	                int bOverlay = bSubtractedColor | bBrightfieldRGB;
+	               
+	                
+	                // Combine the overlay values into a single RGB pixel value
+	                int rgbOverlay = (rOverlay << 16) | (gOverlay << 8) | bOverlay;
+	                
+	                // Set the pixel value in the overlay image
+	                OverlayProcessor.set(index, rgbOverlay);
+	            }
+	        }
+		}else if(option.equals("Add")) {
+			for (int y = 0; y < height; y++) {
+	            for (int x = 0; x < width; x++) {
+	                int index = y * width + x;
+	                
+	                // Extract the color components for each pixel
+	                int rSubtractedColor = (SubtractedRGB_Pixels[index] >> 16) & 0xff;
+	                int gSubtractedColor = (SubtractedRGB_Pixels[index] >> 8) & 0xff;
+	                int bSubtractedColor = SubtractedRGB_Pixels[index] & 0xff;
+	                
+	                int rBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 16) & 0xff;
+	                int gBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 8) & 0xff;
+	                int bBrightfieldRGB = BrightfieldRGB_Pxels[index] & 0xff;
+	                
+	                // Apply the overlay formula to each color channel
+	    
+	                
+	                int rOverlay = rSubtractedColor + rBrightfieldRGB;
+	                int gOverlay = gSubtractedColor + gBrightfieldRGB;
+	                int bOverlay = bSubtractedColor + bBrightfieldRGB;
+	                
+	                
+	                // Combine the overlay values into a single RGB pixel value
+	                int rgbOverlay = (rOverlay << 16) | (gOverlay << 8) | bOverlay;
+	                
+	                // Set the pixel value in the overlay image
+	                OverlayProcessor.set(index, rgbOverlay);
+	            }
+	        }
+		}else if(option.equals("Soustract")) {
+			for (int y = 0; y < height; y++) {
+	            for (int x = 0; x < width; x++) {
+	                int index = y * width + x;
+	                
+	                // Extract the color components for each pixel
+	                int rSubtractedColor = (SubtractedRGB_Pixels[index] >> 16) & 0xff;
+	                int gSubtractedColor = (SubtractedRGB_Pixels[index] >> 8) & 0xff;
+	                int bSubtractedColor = SubtractedRGB_Pixels[index] & 0xff;
+	                
+	                int rBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 16) & 0xff;
+	                int gBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 8) & 0xff;
+	                int bBrightfieldRGB = BrightfieldRGB_Pxels[index] & 0xff;
+	                
+	                // Apply the overlay formula to each color channel
+	    
+	                
+	                int rOverlay = rSubtractedColor - rBrightfieldRGB;
+	                int gOverlay = gSubtractedColor - gBrightfieldRGB;
+	                int bOverlay = bSubtractedColor - bBrightfieldRGB;
+	                
+	                
+	                // Combine the overlay values into a single RGB pixel value
+	                int rgbOverlay = (rOverlay << 16) | (gOverlay << 8) | bOverlay;
+	                
+	                // Set the pixel value in the overlay image
+	                OverlayProcessor.set(index, rgbOverlay);
+	            }
+	        }
+		}else if(option.equals("Multiply")) {
+			for (int y = 0; y < height; y++) {
+	            for (int x = 0; x < width; x++) {
+	                int index = y * width + x;
+	                
+	                // Extract the color components for each pixel
+	                int rSubtractedColor = (SubtractedRGB_Pixels[index] >> 16) & 0xff;
+	                int gSubtractedColor = (SubtractedRGB_Pixels[index] >> 8) & 0xff;
+	                int bSubtractedColor = SubtractedRGB_Pixels[index] & 0xff;
+	                
+	                int rBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 16) & 0xff;
+	                int gBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 8) & 0xff;
+	                int bBrightfieldRGB = BrightfieldRGB_Pxels[index] & 0xff;
+	                
+	                // Apply the overlay formula to each color channel
+	    
+	                
+	                int rOverlay = rSubtractedColor * rBrightfieldRGB;
+	                int gOverlay = gSubtractedColor * gBrightfieldRGB;
+	                int bOverlay = bSubtractedColor * bBrightfieldRGB;
+	                
+	                // Combine the overlay values into a single RGB pixel value
+	                int rgbOverlay = (rOverlay << 16) | (gOverlay << 8) | bOverlay;
+	                
+	                // Set the pixel value in the overlay image
+	                OverlayProcessor.set(index, rgbOverlay);
+	            }
+	        }
+		}else if(option.equals("and")) {
+			for (int y = 0; y < height; y++) {
+	            for (int x = 0; x < width; x++) {
+	                int index = y * width + x;
+	                
+	                // Extract the color components for each pixel
+	                int rSubtractedColor = (SubtractedRGB_Pixels[index] >> 16) & 0xff;
+	                int gSubtractedColor = (SubtractedRGB_Pixels[index] >> 8) & 0xff;
+	                int bSubtractedColor = SubtractedRGB_Pixels[index] & 0xff;
+	                
+	                int rBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 16) & 0xff;
+	                int gBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 8) & 0xff;
+	                int bBrightfieldRGB = BrightfieldRGB_Pxels[index] & 0xff;
+	                
+	                // Apply the overlay formula to each color channel
+	    
+	                
+	                int rOverlay = rSubtractedColor & rBrightfieldRGB;
+	                int gOverlay = gSubtractedColor & gBrightfieldRGB;
+	                int bOverlay = bSubtractedColor & bBrightfieldRGB;
+	                
+	                
+	                // Combine the overlay values into a single RGB pixel value
+	                int rgbOverlay = (rOverlay << 16) | (gOverlay << 8) | bOverlay;
+	                
+	                // Set the pixel value in the overlay image
+	                OverlayProcessor.set(index, rgbOverlay);
+	            }
+	        }
+		}else {
+			for (int y = 0; y < height; y++) {
+	            for (int x = 0; x < width; x++) {
+	                int index = y * width + x;
+	                
+	                // Extract the color components for each pixel
+	                int rSubtractedColor = (SubtractedRGB_Pixels[index] >> 16) & 0xff;
+	                int gSubtractedColor = (SubtractedRGB_Pixels[index] >> 8) & 0xff;
+	                int bSubtractedColor = SubtractedRGB_Pixels[index] & 0xff;
+	                
+	                int rBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 16) & 0xff;
+	                int gBrightfieldRGB = (BrightfieldRGB_Pxels[index] >> 8) & 0xff;
+	                int bBrightfieldRGB = BrightfieldRGB_Pxels[index] & 0xff;
+	                
+	                // Apply the overlay formula to each color channel
+	                
+	                int rOverlay = Math.max(rSubtractedColor, rBrightfieldRGB);
+	                int gOverlay = Math.max(gSubtractedColor, gBrightfieldRGB);
+	                int bOverlay = Math.max(bSubtractedColor, bBrightfieldRGB);
+	                
+	                
+	                // Combine the overlay values into a single RGB pixel value
+	                int rgbOverlay = (rOverlay << 16) | (gOverlay << 8) | bOverlay;
+	                
+	                // Set the pixel value in the overlay image
+	                OverlayProcessor.set(index, rgbOverlay);
+	            }
+	        }
+		}
+		
+		ImagePlus overlay=new ImagePlus(option+"_Overlay Image",OverlayProcessor);
+		return overlay;
+	}
+	
+	/**
+	 * Cette fonction permet de convertir l'image brightfield de 16 bits
+	 *  en brightfield RGB de 24 bits.
+	 * @param brightfield
+	 * @return brightfield_rgb
+	 */
+
+	public ImagePlus CovertTO_Brightfield_Rgb(ImagePlus brightfield) {
+		ImageProcessor ip=brightfield.getProcessor();
+		 ColorProcessor cp = new ColorProcessor(ip.getWidth(), ip.getHeight());
+	        // Parcourir chaque pixel et diviser la valeur 16 bits par 256
+	        for (int x = 0; x < ip.getWidth(); x++) {
+	            for (int y = 0; y < ip.getHeight(); y++) {
+	                int value = ip.getPixel(x, y);
+	                int r = value / 256;
+	                int g = value / 256;
+	                int b = value / 256;
+	                int rgb = (r << 16) + (g << 8) + b; // Combinaison des canaux RGB
+	                cp.putPixel(x, y, rgb); // Ajout du pixel à l'image RGB
+	            }
+	        }
+	        //Mettre à jour l'image brightfield pour obtenir une image brightfield_rgb
+	        brightfield.setProcessor(cp);;
+		  
+		return brightfield;
+	}
+
+
+
+		
+		public ReturnImage applies_color(ImagePlus image) {
+		    ImageProcessor ip = image.getProcessor();
+		    ImageProcessor byteIp = ip.convertToByte(true);
+
+		    int option = JOptionPane.showOptionDialog(null, "Choose a color palette", "Palette selection",
+		            JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
+		            new String[]{"Color Chooser ", "LookUp Tables "}, null);
+		    if(option==-1) {
+		    	setCount=0;
+		    }else {
+		    	setCount=1;
+		    }
+		    
+		    if (option == 0) {
+		        // Utiliser la palette JColorChooser
+		         color = JColorChooser.showDialog(null, "Choose a color for subtracted image", Color.white);
+		        // Color color1 = JColorChooser.showDialog(null, "Choose a color for subtracted image", Color.white);
+		        
+		        if (color != null) {
+		        	//Coleur de depart obtenue avec JColorChooser
+		            int r = color.getRed();
+		            int g = color.getGreen();
+		            int b = color.getBlue();
+		            
+		            
+		            //Couleur de fin ontenu par calcul dans l'obtique de créer un gradient de couleur.
+		          
+		            int width = ip.getWidth();
+		            int height = ip.getHeight();
+		            
+		          
+		            byte[] pixels = (byte[]) byteIp.getPixels();
+		            int[] rgbPixels = new int[width * height];
+
+		            for (int y = 0; y < height; y++) {
+		                for (int x = 0; x < width; x++) {
+		                    int index = x + y * width;
+		                    int gray = pixels[index] & 0xffffff;
+		                    		                 
+		                    rgbPixels[index] = ((r * gray / 255) << 16 | (g * gray / 255) << 8 | (b * gray / 255));
+		                    
+		                }
+		            }
+
+		            ColorProcessor ipRGB = new ColorProcessor(width, height, rgbPixels);
+		            image.setProcessor(ipRGB);
+		        } else {
+		            IJ.error("It's impossible to apply the RGB color to the image! Make sure you click on OK in the palette!");
+		        }
+
+		    } else if (option == 1) {
+		        // Utiliser la palette LookUpTable prédéfinie
+		    	
+		    	 // Récupérer la LUT de niveaux de gris
+		        
+		    	String lutDirPath = IJ.getDirectory("luts");
+
+		        // Récupérer la liste des noms de fichiers de LUT dans le répertoire des LUT prédéfinies
+		        File lutDir = new File(lutDirPath);
+		        String[] lutFiles = lutDir.list();
+		        
+		     // Créer la liste de sélection déroulante
+		        GenericDialog gd = new GenericDialog("Choisir une LUT");
+		        gd.addChoice("LUT", lutFiles, lutFiles[0]);
+
+		        // Afficher la boîte de dialogue et attendre la réponse de l'utilisateur
+		        gd.showDialog();
+		        
+		        if (gd.wasCanceled()) {
+		           setCount=0;
+		        }else {
+		        	setCount=1;
+		        }
+		        
+		        // Récupérer la LUT sélectionnée
+		        String lutFilename = gd.getNextChoice();
+		        String lutPath = lutDirPath + lutFilename;
+		         lut =  LutLoader.openLut(lutPath);
+		         lutName=lutFilename;
+		        //appliquer la LUT max à l'image
+		         
+		       
+		       if(setCount==1 && lut !=null) {
+		    	   
+		    	   ip.setLut(lut);
+		        	 lutmax=maxLut(ip);
+		        
+		      
+		    	   IndexColorModel icm = (IndexColorModel) ip.getLut().getColorModel();
+			          
+			          int mapSize = icm.getMapSize();
+			          byte[] reds = new byte[mapSize];
+			          byte[] greens = new byte[mapSize];
+			          byte[] blues = new byte[mapSize];
+			          icm.getReds(reds);
+			          icm.getGreens(greens);
+			          icm.getBlues(blues);
+			          
+			          
+			         
+			          for (int i = 0; i < mapSize; i++) {
+			        	 double  value = ((double)i / (double)mapSize);
+			              if (value > lutmax*65535) {
+			                  reds[i] = (byte)(lutmax * 255.0);
+			                  greens[i] = (byte)(lutmax * 255.0);
+			                  blues[i] = (byte)(lutmax * 255.0);
+			              }
+			            
+			          }
+			          
+			          IndexColorModel newIcm = new IndexColorModel(8, mapSize, reds, greens, blues);
+			          LUT newLut = new LUT(newIcm, ip.getLut().min, (int) (lutmax * 255));
+			          byteIp.setLut(newLut);
+
+			        ImageProcessor ipRGB=byteIp.convertToRGB();
+			        image.setProcessor(ipRGB);
+			        
+			        overlayImage=Overlay_images(image,image1,OptionSelectid);
+		    	   
+		       }else {
+		    	   IJ.showMessage("Sorry but the LUT max and LUT color are required !");
+		       }
+		         
+		         
+		        
+		        
+		  /**
+		   * Bouton pour modifier le réglage de lut max 
+		   */
+		       if(setCount==1) {
+		    	   frame = new JFrame();
+			         panel = new JPanel();
+			        Button lutMaxButton = new Button("Change settings");
+			        lutMaxButton.setBackground(Color.green);
+				     panel.add(lutMaxButton);
+				     frame.add(panel);
+				     frame.pack();
+				     frame.setVisible(true);
+				     
+				     
+					 lutMaxButton.addActionListener(new ActionListener() {
+						 public void actionPerformed(ActionEvent e) {
+						     
+							 LutParams lutParams =maxLutUpdate(ip);
+							 lutmax=lutParams.lutMax;
+							 OptionSelectid=lutParams.modeType;
+
+						       
+					         
+					          IndexColorModel icm = (IndexColorModel) ip.getLut().getColorModel();
+					          
+					          int mapSize = icm.getMapSize();
+					          byte[] reds = new byte[mapSize];
+					          byte[] greens = new byte[mapSize];
+					          byte[] blues = new byte[mapSize];
+					          icm.getReds(reds);
+					          icm.getGreens(greens);
+					          icm.getBlues(blues);
+					          
+					          
+					         
+					          for (int i = 0; i < mapSize; i++) {
+					        	 double  value = ((double)i / (double)mapSize);
+					              if (value > lutmax*65535) {
+					                  reds[i] = (byte)(lutmax * 255.0);
+					                  greens[i] = (byte)(lutmax * 255.0);
+					                  blues[i] = (byte)(lutmax * 255.0);
+					              }
+					             
+					              
+					          }
+					          
+					          IndexColorModel newIcm = new IndexColorModel(8, mapSize, reds, greens, blues);
+					          LUT newLut = new LUT(newIcm, ip.getLut().min, (int) (lutmax * 255));
+					          byteIp.setLut(newLut);
+
+					        ImageProcessor ipRGB=byteIp.convertToRGB();
+					        image.setProcessor(ipRGB); 
+					        
+					       
+					        if(setCount==1) {
+					        	overlayImage=Overlay_images(image,image1,OptionSelectid);
+					        	
+				        		overlayImage.show();
+				        		ImageWindow win3 = overlayImage.getWindow();
+								win3.setLocation(700,10);
+						  		
+								save_images(overlayImage,OptionSelectid);
+								
+					        }else {
+					        	IJ.showMessage("The previous data are kept, thanks !");
+					        }
+					        
+					    }
+
+						 }
+					 );
+		       }
+		         
+				 
+		       
+		    }
+		    
+		    return new ReturnImage(image,overlayImage);
+		}
+
+		
+
+		/**
+		 * Cette fonction permet de créer unn nouveau répertoire nommé PluginOverlay 
+		 * pour enregistrer les tois images.  
+		 */
+			
+			@SuppressWarnings("deprecation")
+			public void save_images(ImagePlus image,String option) {
+				Date date=new Date();
+				File directory = new File(file.getParent().replaceFirst("subtracted", "overlayPlugin"));
+				if (!directory.exists()) {
+			         boolean success = directory.mkdir();
+			         if (success) {
+			            FileSaver fs = new FileSaver(image);
+			            try {
+							Thread.sleep(1000); // permet de retarder le système de 2 secondes.
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						} 
+						 fs.saveAsTiff(directory.getAbsolutePath()+"/overlay_"+option.toLowerCase()+"_"+date.getYear()+"-"+date.getMonth()+"-"+date.getHours()+"_"+date.getSeconds()+".tif");
+						 IJ.showMessage("Image overlay enregistrée avec succès dans le répertoir overlayPlugin !");
+						 
+						 JSONObject data = new JSONObject();
+						 
+						 try {
+							data.put("LUT",lut );
+							data.put("color",color);
+							data.put("subtrated_path",subtracted );
+							 data.put("subtrated_frameId", frameId_1);
+							 data.put("brightfield_path",brightfield );
+							 data.put("brightfield_frameId", frameId_2);
+							 data.put("LUTmax", lutmax);
+							 data.put("LUT_name", lutName);
+							 data.put("Overlay_mode", OptionSelectid);
+							 
+						} catch (JSONException e1) {
+							e1.printStackTrace();
+						}
+						 
+					   String path=directory.getAbsolutePath()+"/overlay_"+option.toLowerCase()+"_"+date.getYear()+"-"+date.getMonth()+"-"+date.getHours()+"_"+date.getSeconds()+".json";
+					   try (FileWriter fileWriter = new FileWriter(path)) {
+						   fileWriter.write(data.toString());
+						    System.out.println("Fichier JSON créé avec succès!");
+						} catch (IOException e) {
+						    System.out.println("Erreur lors de l'écriture du fichier JSON:");
+						    e.printStackTrace();
+						}
+					    
+					  } else {
+			        	 IJ.error("Echec de création du répertoir !");
+			         }
+			         }else {
+			        	 FileSaver fs = new FileSaver(image);
+			        	 try {
+							Thread.sleep(1000); // permet de retarder le système de 2 secondes.
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						} 
+							 fs.saveAsTiff(directory.getAbsolutePath()+"/overlay_"+option.toLowerCase()+"_"+date.getYear()+"-"+date.getMonth()+"-"+date.getHours()+"_"+date.getSeconds()+".tif");
+							 JSONObject data = new JSONObject();
+							
+							 try {
+								data.put("LUT",lut );
+								data.put("color", color);
+								data.put("subtrated_path",subtracted );
+								 data.put("subtrated_frameId", frameId_1);
+								 data.put("brightfield_path",brightfield );
+								 data.put("brightfield_frameId", frameId_2);
+								 data.put("LUTmax", lutmax);
+								 data.put("LUT_name", lutName);
+								 data.put("Overlay_mode", OptionSelectid);
+							} catch (JSONException e1) {
+								e1.printStackTrace();
+							}
+							 
+						   String path=directory.getAbsolutePath()+"/overlay_"+option.toLowerCase()+"_"+date.getYear()+"-"+date.getMonth()+"-"+date.getHours()+"_"+date.getSeconds()+".json";
+						   try (FileWriter fileWriter = new FileWriter(path)) {
+							   fileWriter.write(data.toString());
+							    System.out.println("Fichier JSON créé avec succès!");
+							} catch (IOException e) {
+							    System.out.println("Erreur lors de l'écriture du fichier JSON:");
+							    e.printStackTrace();
+							}
+							 JOptionPane.showMessageDialog(null, "Image overlay enregistrée avec succès dans le répertoir overlayPlugin !");
+			         }
+				 
+			}
+ 
+			
+			public double maxLut(ImageProcessor ip) {
+				
+				// Créer la fenêtre d'interface utilisateur
+		     
+		       
+				GenericDialog gd = new GenericDialog("LUT Max Adjuster");
+		        gd.addSlider("LUT Max (%):", 0, 1.0,lutmax , 0.01);
+		        gd.showDialog();
+		         
+		        if (gd.wasCanceled()) {
+		        	setCount=0;
+		        	 return lutmax;
+		        }
+		        setCount=1;
+		     // Récupérer la valeur du curseur
+		         double lut_Max = gd.getNextNumber();
+		        
+				return  lut_Max;
+			}
+			
+			
+			public LutParams maxLutUpdate(ImageProcessor ip) {
+				
+				// Créer la fenêtre d'interface utilisateur
+		     
+		       
+				GenericDialog gd = new GenericDialog("LUT Max Adjuster");
+				
+				gd.setPreferredSize(new Dimension(500, 250));
+				
+		        gd.addSlider("LUT Max (%):", 0, 1.0,lutmax , 0.01);
+		        gd.addChoice("Select overlay mode:", options, options[0]);
+		        gd.showDialog();
+		         
+		        if (gd.wasCanceled()) {
+		        	setCount=0;
+		        	return new LutParams(lutmax, options[0]);
+		        }
+		        setCount=1;
+		     // Récupérer la valeur du curseur
+		         double lut_Max = gd.getNextNumber();
+		         String option=gd.getNextChoice();
+		        
+				return new LutParams(lut_Max, option) ;
+			}
+
+			
+			
+
+			
+//end class
+}
+
+
+
+

@@ -1,0 +1,214 @@
+
+import java.io.File;
+import javax.swing.JOptionPane;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import ij.IJ;
+import ij.ImagePlus;
+import ij.gui.ImageWindow;
+import ij.io.OpenDialog;
+import ij.io.Opener;
+import ij.plugin.PlugIn;
+
+import ij.process.ImageProcessor;
+
+
+/**
+ * 
+ * @author KONAN Kouakou Abel
+ *
+ *Développement de plugin pour le traitemant d'image avec ImageJ/Fiji
+ */
+public class Kis_Overlay implements PlugIn{
+
+	private File file;
+	private ImagePlus image,image1;
+	private String json_txt;
+	private String json_txt1;
+	//int open_braces = 0;
+   // int close_braces = 0;
+    private String frameId_1,frameId_2;
+
+	@SuppressWarnings("unlikely-arg-type")
+	@Override
+	public void run(String arg0) {
+		
+		 JOptionPane.showMessageDialog(null, "Please choose only the substrated image ! click ok to continue!");
+		 
+		 /**
+		 * 	Boite de dialogue
+		 */
+		 
+			OpenDialog dg=new OpenDialog("Open Kis Tiff file",null);
+			
+			if(dg.getDirectory()==null) {
+				return;
+			}
+			
+			file=new File(dg.getDirectory(),dg.getFileName());
+			
+			if(file==null || file.equals("")) {
+				return;
+			}
+			
+			/**--------------------------------------------------------
+			 *					 Etude de l'image 1
+			 * ---------------------------------------------------------
+			 */
+			Opener opener =new Opener();
+			 image=opener.openImage(file.getAbsolutePath()); 
+			if( image == null ) {
+		         IJ.showMessage("Error", "Cannot open image, unknown format.");
+		         return;
+		        }
+			
+			
+			/**
+			 * Test sur les deux images 
+			 */
+			
+				  json_txt = image.getProp("ImageDescription");
+				  if(json_txt == null ) {
+			             IJ.showMessage("Error", "cannot extract meta field from file.");
+			             return;}
+				 //-------------------FrameID--------------//--
+				  
+				  frameId_1=frameId_for_Image(json_txt);
+				  
+			  //--------------------------------------------//-
+				  
+			/**-----------------------------------------------
+			*			 Etude sur l'image 2
+		    * -----------------------------------------------
+		    */
+				  
+				  File repertoir=new File(file.getParent().replaceFirst("subtracted", "brightfield"));
+		 		 if(repertoir.exists()) {
+
+					  File []files=repertoir.listFiles();
+					  if(files==null) {
+						  JOptionPane.showMessageDialog(null, "The brightfield folder is empty. Click ok to exit !");
+						  return;
+					  }
+					  
+					  for(int i=0;i<files.length;i++) {
+						   image1= opener.openImage(files[i].getAbsolutePath());
+						  json_txt1 = image1.getProp("ImageDescription");
+						    frameId_2=frameId_for_Image(json_txt1);
+						    
+						   if(frameId_2.equals(frameId_1)) {
+							   image1= opener.openImage(files[i].getAbsolutePath());
+							   json_txt1 = image1.getProp("ImageDescription");
+							   break;
+						   }
+					  }
+		 		 }else {
+		 			 
+		 			JOptionPane.showMessageDialog(null, "The brightfield folder does not exist. Click ok to exit !");
+		 		 }
+				  
+				  
+			/**------------------------------------------------------------------
+			 *			 Afichage des images.
+			 * ------------------------------------------------------------------
+			 */
+		 		
+			
+				//afficher l'image 1
+		 		image=applies_color(image);
+		 		image.show();
+				ImageWindow win1 = image.getWindow();
+				win1.setLocation(0,0);
+				
+				if(repertoir.exists()) {
+					image1.show();//afficher l'image 2
+					image1.updateAndDraw();
+					ImageWindow win2 = image1.getWindow();
+					win2.setLocation(500,0);
+				}
+				
+			
+		
+		
+		  	
+	}
+	
+	//--------------------------------------------------------------//
+	
+	/**
+	 * Méthode pour récuperer le frameId de l'image.
+	 */
+
+	@SuppressWarnings("unused")
+	public String frameId_for_Image(String json_txt) {
+		String frameId = null;
+		
+		try {
+			int open_braces = 0;
+		      int close_braces = 0;
+
+		      // Handle missing last char in KC3.0.
+		      for( int i1 = 0; i1 < json_txt.length(); i1++ ) {
+		      char c = json_txt.charAt(i1);
+		      if( c == '{' ) open_braces += 1;
+		      if( c == '}' ) close_braces += 1;
+		      }
+		      if( open_braces != close_braces) {
+		         json_txt = json_txt + "}";
+		      }
+			JSONObject json = new JSONObject(json_txt);
+			
+			if( json == null ) {
+		         IJ.showMessage("Error", "cannot parse meta field from file: no kiscontrol metadata found.");
+			}
+			 frameId=json.getJSONObject("frame_id").getString("String");
+			
+			
+			
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
+		return frameId;
+		
+	}
+	
+	/**
+	 *  Méthode de reglage de l'image substrated avant de l'afficher
+	 */
+	public ImagePlus applies_color(ImagePlus image) {
+		ImageProcessor ip=image.getProcessor();
+		//ShortProcessor sp =(ShortProcessor)ip.convertToShort(false);
+		//ImageProcessor ip8=sp.convertToByte(true);
+		//int color=0xEA0D01;
+		//ColorProcessor cp=new ColorProcessor(ip8.getWidth(),ip8.getHeight());
+		//cp.setColor(color);
+		//cp.fill(ip8);
+		
+		for(int y=0; y<ip.getHeight(); y++) {
+			
+			for(int x=0; x<ip.getWidth();x++) {
+			int pixel=ip.getPixel(x, y);
+				
+				int r=(int)(pixel & 0xFF0000)>>16;
+				int g=(int)(pixel & 0x00FF00)>>8;
+				int b=(int)(pixel& 0x0000FF);
+				
+				r=255-r;
+				g=25-g;
+				b=255-b;
+			int luminance=(int)(((r & 0xff)<<16) +((g & 0xff)<<8) + (b & 0xff));
+			
+			
+				ip.putPixel(x, y, luminance);
+			
+			}
+		}
+		
+		ImagePlus img=new ImagePlus("subtracted",ip);
+		return img;
+	}
+}
+
+

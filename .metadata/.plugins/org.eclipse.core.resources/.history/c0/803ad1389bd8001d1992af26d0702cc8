@@ -1,0 +1,45 @@
+import java.io.File;
+import ij.IJ;
+import ij.ImagePlus;
+import ij.io.OpenDialog;
+import ij.io.Opener;
+import ij.plugin.PlugIn;
+
+public class Kis_Overlay implements PlugIn{
+
+	private File file;
+
+	@SuppressWarnings("unlikely-arg-type")
+	@Override
+	public void run(String arg0) {
+		// TODO Auto-generated method stub
+OpenDialog dg=new OpenDialog("Open Kis Tiff file",null);
+		
+		if(dg.getDirectory()==null) {
+			return;
+		}
+		
+		file=new File(dg.getDirectory(),dg.getFileName());
+		
+		if(file==null || file.equals(" ")) {
+			return;
+		}
+		
+		Opener opener =new Opener();
+		ImagePlus image=opener.openImage(file.getAbsolutePath()); 
+		  if( image == null ) {
+		         IJ.showMessage("Error", "Cannot open image, unknown format.");
+		         return;
+		        }
+		      String json_txt = image.getProp("ImageDescription");
+		        if( json_txt == null ) {
+		                 IJ.showMessage("Error", "cannot extract meta field from file.");
+		                 return;
+		        }
+		image.show();
+		
+	}
+
+	
+
+}

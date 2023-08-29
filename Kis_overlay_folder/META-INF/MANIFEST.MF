@@ -1,0 +1,8 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Kis_ovaerlay_folder
+Bundle-SymbolicName: Kis_overlay_folder
+Bundle-Version: 1.0.0.qualifier
+Automatic-Module-Name: Kis.ovaerlay.folder
+Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+Export-Package: .
